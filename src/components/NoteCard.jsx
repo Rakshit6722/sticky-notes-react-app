@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import DeleteButton from "./DeleteButton";
 import Spinner from "../icons/Spinner";
 import { setNewOffset, setZIndex, bodyParser } from "../utils";
 import db from "../appwrite/databases";
+import { NoteContext } from "../context/NoteContext";
 
 const NoteCard = ({ note, setNotes }) => {
     const [saving, setSaving] = useState(false);
@@ -12,6 +13,8 @@ const NoteCard = ({ note, setNotes }) => {
 
     const initialPosition = note?.position ? JSON.parse(note.position) : { x: 0, y: 0 };
     const [position, setPosition] = useState(initialPosition);
+
+    const { setSelectedNote } = useContext(NoteContext)
 
     let mouseStartPos = { x: 0, y: 0 };
 
@@ -39,6 +42,7 @@ const NoteCard = ({ note, setNotes }) => {
 
     const startMove = (e) => {
         e.preventDefault();
+        setSelectedNote(note)
         if (e.type === 'mousedown') {
             mouseStartPos.x = e.clientX;
             mouseStartPos.y = e.clientY;
@@ -142,7 +146,11 @@ const NoteCard = ({ note, setNotes }) => {
             <div className="card-body">
                 <textarea
                     onKeyUp={handleKeyUp}
-                    onFocus={() => setZIndex(cardRef.current)}
+                    onFocus={() => {
+                        setZIndex(cardRef.current)
+                        setSelectedNote(note)
+                    }
+                    }
                     onInput={() => {
                         const textarea = textAreaRef.current;
                         textarea.style.height = "auto";

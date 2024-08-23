@@ -1,150 +1,160 @@
-import { useEffect, useRef, useState, useContext } from "react";
-import Trash from "../icons/Trash";
+import { useEffect, useRef, useState } from "react";
+import DeleteButton from "./DeleteButton";
+import Spinner from "../icons/Spinner";
 import { setNewOffset, setZIndex, bodyParser } from "../utils";
 import db from "../appwrite/databases";
-import Spinner from "../icons/Spinner";
-// import { handleDelete } from "../pages/NotesPage";
-import DeleteButton from "./DeleteButton";
-import { NoteContext } from "../context/NoteContext";
 
-const NoteCard = ({ note }) => {
+const NoteCard = ({ note, setNotes }) => {
+    const [saving, setSaving] = useState(false);
+    const keyUpTimer = useRef(null);
+    const textAreaRef = useRef(null);
+    const cardRef = useRef(null);
 
-    const { setSelectedNote } = useContext(NoteContext)
+    const initialPosition = note?.position ? JSON.parse(note.position) : { x: 0, y: 0 };
+    const [position, setPosition] = useState(initialPosition);
 
-    const [saving, setSaving] = useState(false)
-    const keyUpTimer = useRef(null)
+    let mouseStartPos = { x: 0, y: 0 };
 
-
-    //debounced function to save what user is writing in the textarea once he stops after keyUp event occurred after 2 sec
     const handleKeyUp = () => {
         setSaving(true);
 
         if (keyUpTimer.current) {
-            // console.log(keyUpTimer.current)
-            clearInterval(keyUpTimer.current)
+            clearTimeout(keyUpTimer.current);
         }
 
         keyUpTimer.current = setTimeout(() => {
-            saveData("body", textAreaRef.current.value)
-        }, 2000)
-    }
+            saveData("body", textAreaRef.current.value);
+        }, 2000); // Delay for debounce
+    };
 
     const saveData = async (key, value) => {
         const payload = { [key]: JSON.stringify(value) };
         try {
-            await db.notes.update(note.$id, payload)
+            await db.notes.update(note.$id, payload);
         } catch (err) {
-            console.error(err)
+            console.error(err);
         }
-        setSaving(false)
-    }
+        setSaving(false);
+    };
 
-    //to dynamically change the position of cards ans move them on screen
-    const initialPosition = note?.position ? JSON.parse(note.position) : { x: 0, y: 0 };
-    const [position, setPosition] = useState(initialPosition);
-    let mouseStartPos = { x: 0, y: 0 };
-
-    const cardRef = useRef(null)
-
-    const mouseDown = (e) => {
-        if (e.target.className === 'card-header') {
+    const startMove = (e) => {
+        e.preventDefault();
+        if (e.type === 'mousedown') {
             mouseStartPos.x = e.clientX;
             mouseStartPos.y = e.clientY;
-
-            document.addEventListener("mousemove", mouseMove)
-            document.addEventListener("mouseup", mouseUp)
-
-            setSelectedNote(note)
-        }
-    }
-
-    const mouseUp = () => {
-        document.removeEventListener("mousemove", mouseMove);
-        document.removeEventListener("mouseup", mouseUp);
-
-        const newPosition = setNewOffset(cardRef.current)
-        saveData("position", newPosition)
-    }
-
-    const mouseMove = (e) => {
-        setZIndex(cardRef.current)
-        // console.log(cardRef.current)
-        let mouseMoveDir = {
-            x: mouseStartPos.x - e.clientX,
-            y: mouseStartPos.y - e.clientY,
+        } else if (e.type === 'touchstart') {
+            mouseStartPos.x = e.touches[0].clientX;
+            mouseStartPos.y = e.touches[0].clientY;
         }
 
-        mouseStartPos.x = e.clientX,
-            mouseStartPos.y = e.clientY
+        document.addEventListener("mousemove", moveCard);
+        document.addEventListener("mouseup", stopMove);
+        document.addEventListener("touchmove", moveCard);
+        document.addEventListener("touchend", stopMove);
+    };
 
-        const newPosition = setNewOffset(cardRef.current, mouseMoveDir)
+    const moveCard = (e) => {
+        setZIndex(cardRef.current);
 
-        setPosition(newPosition)
-    }
+        let mouseMoveDir;
 
+        if (e.type === 'mousemove') {
+            mouseMoveDir = {
+                x: mouseStartPos.x - e.clientX,
+                y: mouseStartPos.y - e.clientY,
+            };
+            mouseStartPos.x = e.clientX;
+            mouseStartPos.y = e.clientY;
+        } else if (e.type === 'touchmove') {
+            mouseMoveDir = {
+                x: mouseStartPos.x - e.touches[0].clientX,
+                y: mouseStartPos.y - e.touches[0].clientY,
+            };
+            mouseStartPos.x = e.touches[0].clientX;
+            mouseStartPos.y = e.touches[0].clientY;
+        }
 
-    const body = bodyParser(note.body);
-    // let position = JSON.parse(note.position);
-    const colors = JSON.parse(note.colors)
+        let newPosition = setNewOffset(cardRef.current, mouseMoveDir);
 
-    const textAreaRef = useRef(null)
+        // Get viewport dimensions
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        // Get card dimensions
+        const cardWidth = cardRef.current.offsetWidth;
+        const cardHeight = cardRef.current.offsetHeight;
+
+        // Constrain the new position to the viewport boundaries
+        newPosition.x = Math.max(0, Math.min(newPosition.x, viewportWidth - cardWidth));
+        newPosition.y = Math.max(0, Math.min(newPosition.y, viewportHeight - cardHeight));
+
+        setPosition(newPosition);
+    };
+
+    const stopMove = () => {
+        document.removeEventListener("mousemove", moveCard);
+        document.removeEventListener("mouseup", stopMove);
+        document.removeEventListener("touchmove", moveCard);
+        document.removeEventListener("touchend", stopMove);
+
+        const newPosition = setNewOffset(cardRef.current);
+        saveData("position", newPosition);
+    };
 
     useEffect(() => {
-        autoGrow(textAreaRef);
-        setZIndex(cardRef.current);
-    }, [])
+        const autoGrow = (textarea) => {
+            textarea.style.height = "auto";
+            textarea.style.height = textarea.scrollHeight + "px";
+        };
 
-    function autoGrow(textAreaRef) {
-        const { current } = textAreaRef;
-        console.log(current)
-        current.style.height = "auto";
-        current.style.height = current.scrollHeight + "px";
-    }
+        if (textAreaRef.current) {
+            autoGrow(textAreaRef.current);
+        }
+    }, []);
+
+    const body = bodyParser(note.body);
+    const colors = JSON.parse(note.colors);
 
     return (
-        <div ref={cardRef} className="card"
+        <div
+            ref={cardRef}
+            className="card"
             style={{
                 backgroundColor: colors.colorBody,
                 left: `${position.x}px`,
-                top: `${position.y}px`
+                top: `${position.y}px`,
             }}
         >
-
-            <div onMouseDown={mouseDown} className="card-header"
-                style={{
-                    backgroundColor: colors.colorHeader
-                }}>
-
-                {/* {
-                    saving && (
-                        <div className="card-saving">
-                            <span style={{ color: colors.colorText }}>Saving...</span>
-                        </div>
-                    )
-                } */}
-                <DeleteButton noteId={note.$id} />
+            <div
+                onMouseDown={startMove}
+                onTouchStart={startMove}
+                className="card-header"
+                style={{ backgroundColor: colors.colorHeader }}
+            >
+                <DeleteButton noteId={note.$id} setNotes={setNotes} />
                 {saving && (
                     <div className="card-saving">
                         <Spinner color={colors.colorText} />
-                        <span style={{ color: colors.colorText }}>
-                            Saving...
-                        </span>
+                        <span style={{ color: colors.colorText }}>Saving...</span>
                     </div>
                 )}
             </div>
-
             <div className="card-body">
-                <textarea onKeyUp={() => handleKeyUp()} onFocus={() => {
-                    setZIndex(cardRef.current);
-                    setSelectedNote(note)
-                }} onInput={() => {
-                    autoGrow(textAreaRef);
-                }} ref={textAreaRef} style={{ color: colors.colorText }}
-                    defaultValue={body}>
-                </textarea>
+                <textarea
+                    onKeyUp={handleKeyUp}
+                    onFocus={() => setZIndex(cardRef.current)}
+                    onInput={() => {
+                        const textarea = textAreaRef.current;
+                        textarea.style.height = "auto";
+                        textarea.style.height = textarea.scrollHeight + "px";
+                    }}
+                    ref={textAreaRef}
+                    style={{ color: colors.colorText }}
+                    defaultValue={body}
+                />
             </div>
         </div>
     );
 };
 
-export default NoteCard
+export default NoteCard;
